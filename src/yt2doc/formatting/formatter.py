@@ -1,10 +1,7 @@
 import typing
 import logging
 
-import jinja2
-
 from datetime import timedelta
-from pathlib import Path
 
 from pydantic import BaseModel
 from slugify import slugify
@@ -88,19 +85,32 @@ class MarkdownFormatter:
                 )
             )
 
-        current_dir = Path(__file__).parent
-        jinja_environment = jinja2.Environment(
-            loader=jinja2.FileSystemLoader(current_dir)
-        )
-        template = jinja_environment.get_template("template.md")
-        rendered = template.render(
-            title=title,
-            chapters=[chapter.model_dump() for chapter in chapters_to_render],
-            video_url=video_url,
-            add_table_of_contents=self.add_table_of_contents,
-            to_timestamp_paragraphs=self.to_timestamp_paragraphs,
-        )
-        return rendered
+        lines = [f"# {title}", "", video_url]
+
+        if self.add_table_of_contents:
+            lines.append("")
+            lines.append("### Table of contents")
+            for chapter in chapters_to_render:
+                lines.append(
+                    f"- {chapter.start_h_m_s} [{chapter.title}](#{chapter.custom_id})"
+                )
+
+        for chapter in chapters_to_render:
+            lines.append("")
+            header = f"## {chapter.title}"
+            if self.add_table_of_contents:
+                header += f'<a name="{chapter.custom_id}"></a>'
+            lines.append(header)
+            for paragraph in chapter.paragraphs:
+                lines.append("")
+                prefix = (
+                    f"({paragraph.start_h_m_s}) "
+                    if self.to_timestamp_paragraphs
+                    else ""
+                )
+                lines.append(f"{prefix}{paragraph.text}")
+
+        return "\n".join(lines)
 
     def format_chaptered_transcript(
         self, chaptered_transcript: extraction_interfaces.ChapteredTranscript
