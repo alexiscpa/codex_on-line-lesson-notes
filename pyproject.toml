@@ -11,6 +11,7 @@ dependencies = [
     "instructor>=1.5.1",
     "jinja2>=3.1.4",
     "openai>=1.51.0",
+    "opencc-python-reimplemented>=0.1.7",
     "pathvalidate>=3.2.1",
     "pydantic>=2.9.1",
     "python-slugify>=8.0.4",

@@ -11,6 +11,7 @@ from slugify import slugify
 
 from yt2doc.extraction import interfaces as extraction_interfaces
 from yt2doc.formatting import interfaces
+from yt2doc.i18n.traditional_chinese import to_traditional_chinese
 
 logger = logging.getLogger(__file__)
 
@@ -18,6 +19,13 @@ logger = logging.getLogger(__file__)
 class ParagraphToRender(BaseModel):
     start_h_m_s: str
     text: str
+    custom_id: str
+
+
+class TocParagraph(BaseModel):
+    start_h_m_s: str
+    text: str
+    custom_id: str
 
 
 class ChapterToRender(BaseModel):
@@ -25,6 +33,7 @@ class ChapterToRender(BaseModel):
     custom_id: str
     start_h_m_s: str
     paragraphs: typing.Sequence[ParagraphToRender]
+    toc_paragraphs: typing.Sequence[TocParagraph]
 
 
 class MarkdownFormatter:
@@ -54,6 +63,13 @@ class MarkdownFormatter:
             )
         return start_h_m_s
 
+    @staticmethod
+    def _truncate_text(text: str, max_length: int = 60) -> str:
+        stripped_text = text.strip()
+        if len(stripped_text) <= max_length:
+            return stripped_text
+        return f"{stripped_text[:max_length].rstrip()}…"
+
     def _render(
         self,
         title: str,
@@ -61,30 +77,46 @@ class MarkdownFormatter:
         video_url: str,
         video_id: str,
         webpage_url_domain: str,
+        language_code: str,
     ) -> str:
         chapters_to_render: typing.List[ChapterToRender] = []
         for chapter in chapters:
             if len(chapter.paragraphs) == 0:
                 continue
 
+            chapter_custom_id = slugify(chapter.title)
             paragraphs_to_render = [
                 ParagraphToRender(
-                    text=("".join([sentence.text for sentence in paragraph])).strip(),
+                    text=to_traditional_chinese(
+                        ("".join([sentence.text for sentence in paragraph])).strip(),
+                        language_code=language_code,
+                    ),
                     start_h_m_s=self._start_second_to_start_h_m_s(
                         start_second=paragraph[0].start_second,
                         webpage_url_domain=webpage_url_domain,
                         video_id=video_id,
                     ),
+                    custom_id=f"{chapter_custom_id}-p{index}",
                 )
-                for paragraph in chapter.paragraphs
+                for index, paragraph in enumerate(chapter.paragraphs, start=1)
             ]
             first_paragraph_to_render = paragraphs_to_render[0]
+            toc_paragraphs = [
+                TocParagraph(
+                    text=self._truncate_text(first_paragraph_to_render.text),
+                    start_h_m_s=first_paragraph_to_render.start_h_m_s,
+                    custom_id=first_paragraph_to_render.custom_id,
+                )
+            ]
             chapters_to_render.append(
                 ChapterToRender(
-                    title=chapter.title,
-                    custom_id=slugify(chapter.title),
+                    title=to_traditional_chinese(
+                        chapter.title, language_code=language_code
+                    ),
+                    custom_id=chapter_custom_id,
                     start_h_m_s=first_paragraph_to_render.start_h_m_s,
                     paragraphs=paragraphs_to_render,
+                    toc_paragraphs=toc_paragraphs,
                 )
             )
 
@@ -94,11 +126,12 @@ class MarkdownFormatter:
         )
         template = jinja_environment.get_template("template.md")
         rendered = template.render(
-            title=title,
+            title=to_traditional_chinese(title, language_code=language_code),
             chapters=[chapter.model_dump() for chapter in chapters_to_render],
             video_url=video_url,
             add_table_of_contents=self.add_table_of_contents,
             to_timestamp_paragraphs=self.to_timestamp_paragraphs,
+            language_code=language_code,
         )
         return rendered
 
@@ -133,6 +166,7 @@ class MarkdownFormatter:
             video_url=chaptered_transcript.url,
             video_id=chaptered_transcript.video_id,
             webpage_url_domain=chaptered_transcript.webpage_url_domain,
+            language_code=chaptered_transcript.language,
         )
 
         return interfaces.FormattedTranscript(
